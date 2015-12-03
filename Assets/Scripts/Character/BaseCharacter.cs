@@ -22,6 +22,27 @@ public enum BASECHARACTERSACTIONSTATE //one-use for debugging, every enemy will 
     AIRY
 }
 
+public enum INPUTTYPE
+{
+    GROUNDED,
+    AERIAL,
+    A,
+    B,
+    X,
+    Y,
+    RB,
+    RT,
+    LB,
+    LT,
+    HORIZONTALAXIS, //any use of the horizontal axis
+    VERTICALAXIS, //any use of the vertical axis
+    ANYAXIS, //any use of the left thumbstick/movement axis
+    HORIZONTALFORWARD,
+    VERTICALUP,
+    VERTICALDOWN,
+    AIMING //any use of the right thumbstick
+}
+
 [RequireComponent(typeof(Controller2D))]
 public class BaseCharacter : MonoBehaviour
 {
@@ -29,6 +50,9 @@ public class BaseCharacter : MonoBehaviour
     protected OVERRIDESTATE _state = OVERRIDESTATE.MOVEMENT;
     protected POSITIONSTATE _statePosition = POSITIONSTATE.GROUNDED;
     protected BASECHARACTERSACTIONSTATE _stateAction = BASECHARACTERSACTIONSTATE.NONE;
+
+    protected List<BaseAction> _actionList;
+    protected List<INPUTTYPE> _inputList;
 
     protected BaseAction _bufferedAction; //the action to be played as soon as the character is able to
     protected BaseAction _currentAction;
@@ -81,6 +105,9 @@ public class BaseCharacter : MonoBehaviour
     {
         _controller = GetComponent<Controller2D>();
 
+        _actionList = new List<BaseAction>();
+        _inputList = new List<INPUTTYPE>();
+
         GameObject target = Instantiate((GameObject)Resources.Load("Prefabs/DefaultTarget"));
         target.transform.SetParent(this.transform);
         _defaultTarget = target.GetComponent<DefaultTarget>();
@@ -122,6 +149,54 @@ public class BaseCharacter : MonoBehaviour
         //Get input vector
         _input = InputManager.Instance._moveAxis;
 
+        //detect all current inputs being used
+        _inputList.Clear();
+
+        if (_controller.collisions.below)
+        {
+            _inputList.Add(INPUTTYPE.GROUNDED);
+        }
+        else
+        {
+            _inputList.Add(INPUTTYPE.AERIAL);
+        }
+        if(_input.x > 0 || _input.x < 0)
+        {
+            _inputList.Add(INPUTTYPE.HORIZONTALAXIS);
+        }
+        if(_input.y > 0 || _input.y < 0)
+        {
+            _inputList.Add(INPUTTYPE.VERTICALAXIS);
+        }
+        if(_inputList.Contains(INPUTTYPE.HORIZONTALAXIS) || _inputList.Contains(INPUTTYPE.VERTICALAXIS))
+        {
+            _inputList.Add(INPUTTYPE.ANYAXIS);
+        }
+        if (_input.x > InputManager.Instance._directionRegisterDeadzone || _input.x < -InputManager.Instance._directionRegisterDeadzone)
+        {
+            _inputList.Add(INPUTTYPE.HORIZONTALFORWARD);
+        }
+        if(InputManager.Instance._APressed)
+        {
+            _inputList.Add(INPUTTYPE.A);
+        }
+        if (InputManager.Instance._BPressed)
+        {
+            _inputList.Add(INPUTTYPE.B);
+        }
+        if (InputManager.Instance._XPressed)
+        {
+            _inputList.Add(INPUTTYPE.X);
+        }
+        if (InputManager.Instance._YPressed)
+        {
+            _inputList.Add(INPUTTYPE.Y);
+        }
+        if(Input.GetKeyDown(KeyCode.Mouse0))
+        {
+            _inputList.Add(INPUTTYPE.LT);
+        }
+
         bool left = false;
         bool right = false;
         if (_state == OVERRIDESTATE.MOVEMENT)
@@ -147,10 +222,6 @@ public class BaseCharacter : MonoBehaviour
             }
         }
         
-        //ifkeyboard
-        //_input.x = Mathf.Sign(_input.x);
-
-        //Debug.Log(_controller);
         if(_controller.collisions.below)
         {
             _statePosition = POSITIONSTATE.GROUNDED;
@@ -193,7 +264,30 @@ public class BaseCharacter : MonoBehaviour
     
     virtual protected void ProcessInputsToBuffer()
     {
-        
+        bool actionChosen = false;
+        for(int i = 0; i < _actionList.Count; i++)
+        {
+            if (!actionChosen)
+            {
+                bool inputsMatch = true;
+                for (int ii = 0; ii < _actionList[i]._inputsRequired.Count; ii++)
+                {
+                    if (!_inputList.Contains(_actionList[i]._inputsRequired[ii]))
+                    {
+                        inputsMatch = false;
+                    }
+                }
+                if (inputsMatch)
+                {
+                    actionChosen = true;
+                    _bufferedAction = _actionList[i];
+                }
+            }
+            else
+            {
+                break;
+            }
+        }
     }
 
     void UseBufferedAction()
@@ -364,12 +458,16 @@ public class BaseCharacter : MonoBehaviour
 public class BaseAction //READ ONLY
 {
     public List<BaseEvent> _eventList;
+    public List<INPUTTYPE> _inputsRequired;
 
     public bool _groundCancel;
+
+    public string _actionName;
 
     public BaseAction()
     {
         _eventList = new List<BaseEvent>();
+        _inputsRequired = new List<INPUTTYPE>();
         _groundCancel = false;
     }
 
@@ -383,6 +481,21 @@ public class BaseAction //READ ONLY
         a_event.SetTriggerTime(a_timeToTrigger);
         _eventList.Add(a_event);
     }
+
+    public void AddInput(INPUTTYPE a_inputType)
+    {
+        _inputsRequired.Add(a_inputType);
+    }
+
+    public void AddPreviousMoveInput(string a_moveName)
+    {
+        //does nothing yet
+    }
+
+    public void SetMoveName(string a_name)
+    {
+        _actionName = a_name;
+    }
 }
 
 //[System.Serializable]
@@ -392,7 +505,7 @@ public class BaseEvent// : System.Object
 
     virtual public void TriggerEvent(BaseCharacter a_character)
     {
-        //a_character._velocity = new Vector2(50 * a_character._trueDirection, a_character._velocity.y + 6);
+        
     }
 
     public void SetTriggerTime(float a_time)
@@ -435,8 +548,7 @@ public class EventSetVelocityOnce : BaseEvent
 }
 
 public class EventSetXVelocity : BaseEvent
-{
-    
+{    
     public float _XVelocity;
 
     public EventSetXVelocity(float a_XVelocity)
