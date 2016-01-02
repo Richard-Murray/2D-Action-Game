@@ -4,13 +4,15 @@ using System.Collections;
 public class CharBerserk : BaseCharacter {
 
 	// Use this for initialization
-	void Start () {
-        Initialise();
-	}
+    //void Start () {
+    //    Initialise();
+    //}
 
-    public void Initialise()
+    public override void Initialise()
     {
         base.Initialise();
+
+        //_playerControlled = !true;
 
         BaseAction _jumpAction = new BaseAction();
         BaseAction _dodgeAction = new BaseAction();
@@ -26,6 +28,7 @@ public class CharBerserk : BaseCharacter {
 
         _jumpAction.SetMoveName("groundJump");
         _jumpAction.AddInput(INPUTTYPE.A);
+        _jumpAction.AddInput(INPUTTYPE.GROUNDED); //making it only on the ground
         _jumpAction.AddEvent(new EventBecomeCancellableAt(0)); //need to zero X velocity
         _jumpAction.AddEvent(new EventSetAerialDegredation(1));
         _jumpAction.AddEvent(new EventSetVelocityWithInputMagnitude(new Vector2(_moveSpeed, 0), true, false));

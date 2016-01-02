@@ -47,21 +47,25 @@ public enum INPUTTYPE
 public class BaseCharacter : MonoBehaviour
 {
     //Core state stuff
+    protected bool _playerControlled = false;
+
     protected OVERRIDESTATE _state = OVERRIDESTATE.MOVEMENT;
     protected POSITIONSTATE _statePosition = POSITIONSTATE.GROUNDED;
     protected BASECHARACTERSACTIONSTATE _stateAction = BASECHARACTERSACTIONSTATE.NONE;
 
     protected List<BaseAction> _actionList;
+    protected List<BaseAction> _interruptList; //TODO
     protected List<INPUTTYPE> _inputList;
 
     protected BaseAction _bufferedAction; //the action to be played as soon as the character is able to
     protected BaseAction _currentAction;
 
+    //may not be needed
     GameObject _lockedTarget;
     DefaultTarget _defaultTarget;
 
     public bool _locked { get { return (bool)_lockedTarget; } }
-    public int _trueDirection {get; private set;}
+    public int _trueDirection { get; private set; }
 
     float _iFrameTimer = 0;
     bool _invincibleFrames = false;
@@ -73,10 +77,10 @@ public class BaseCharacter : MonoBehaviour
     float _aerialDegredation = 1;
 
     [Header("Base Character Attributes")]
-    public float _maxHealth;
-    public float _maxPoise;
-    float _currentHealth;
-    float _currentPoise;
+    public float _HPMax;
+    float _HPCurrent;
+    public float _poiseMax;
+    float _poiseCurrent;
 
     [Header("Base Movement")]
     public float _moveSpeed = 4;
@@ -85,7 +89,7 @@ public class BaseCharacter : MonoBehaviour
     public float _accelerationTimeAirborne = 0.05f;
     public int _numberOfJumps;
     protected int _jumpsLeft;
-//    float _accelerationTimeGrounded = 0.1f;
+    //    float _accelerationTimeGrounded = 0.1f;
 
     [HideInInspector]
     public Vector3 _velocity;
@@ -101,27 +105,32 @@ public class BaseCharacter : MonoBehaviour
         Initialise();
     }
 
-    public void Initialise()
+    //Custom characters overload initialise to build their behaviours (this will be moved to exterior class)
+    //PLAN FOR LATER, every update will be in its own overriden function, base class everything inherits from has the state controller
+    virtual public void Initialise()
     {
         _controller = GetComponent<Controller2D>();
 
         _actionList = new List<BaseAction>();
+        _interruptList = new List<BaseAction>(); //
         _inputList = new List<INPUTTYPE>();
 
         GameObject target = Instantiate((GameObject)Resources.Load("Prefabs/DefaultTarget"));
         target.transform.SetParent(this.transform);
         _defaultTarget = target.GetComponent<DefaultTarget>();
+
+        _HPCurrent = _HPMax;
+        _poiseCurrent = _poiseMax;
     }
 
-
-    // Update is called once per frame
     public void Update()
     {
         GetInputStates();
+        ProcessInputsToBuffer();
         ProcessCancelAndInvulnFrames();
         UseBufferedAction();
-        
-        switch(_state)
+
+        switch (_state)
         {
             case OVERRIDESTATE.MOVEMENT:
                 {
@@ -144,6 +153,7 @@ public class BaseCharacter : MonoBehaviour
         _controller.Move(_velocity * Time.deltaTime);
     }
 
+    //Core functions
     virtual protected void GetInputStates()
     {
         //Get input vector
@@ -155,20 +165,39 @@ public class BaseCharacter : MonoBehaviour
         if (_controller.collisions.below)
         {
             _inputList.Add(INPUTTYPE.GROUNDED);
+            _statePosition = POSITIONSTATE.GROUNDED;
+            _jumpsLeft = _numberOfJumps;
         }
         else
         {
             _inputList.Add(INPUTTYPE.AERIAL);
+            _statePosition = POSITIONSTATE.AERIAL;
         }
-        if(_input.x > 0 || _input.x < 0)
+
+        if (_playerControlled)
+        {
+            ProcessPlayerInput();
+        }
+
+        if (_controller.collisions.below)
+        {
+        }
+        else
+        {
+        }
+    }
+
+    virtual protected void ProcessPlayerInput()
+    {
+        if (_input.x > 0 || _input.x < 0)
         {
             _inputList.Add(INPUTTYPE.HORIZONTALAXIS);
         }
-        if(_input.y > 0 || _input.y < 0)
+        if (_input.y > 0 || _input.y < 0)
         {
             _inputList.Add(INPUTTYPE.VERTICALAXIS);
         }
-        if(_inputList.Contains(INPUTTYPE.HORIZONTALAXIS) || _inputList.Contains(INPUTTYPE.VERTICALAXIS))
+        if (_inputList.Contains(INPUTTYPE.HORIZONTALAXIS) || _inputList.Contains(INPUTTYPE.VERTICALAXIS))
         {
             _inputList.Add(INPUTTYPE.ANYAXIS);
         }
@@ -176,7 +205,7 @@ public class BaseCharacter : MonoBehaviour
         {
             _inputList.Add(INPUTTYPE.HORIZONTALFORWARD);
         }
-        if(InputManager.Instance._APressed)
+        if (InputManager.Instance._APressed)
         {
             _inputList.Add(INPUTTYPE.A);
         }
@@ -192,7 +221,7 @@ public class BaseCharacter : MonoBehaviour
         {
             _inputList.Add(INPUTTYPE.Y);
         }
-        if(Input.GetKeyDown(KeyCode.Mouse0))
+        if (Input.GetKeyDown(KeyCode.Mouse0))
         {
             _inputList.Add(INPUTTYPE.LT);
         }
@@ -221,18 +250,10 @@ public class BaseCharacter : MonoBehaviour
                 }
             }
         }
-        
-        if(_controller.collisions.below)
-        {
-            _statePosition = POSITIONSTATE.GROUNDED;
-            _jumpsLeft = _numberOfJumps;
-        }
-        else
-        {
-            _statePosition = POSITIONSTATE.AERIAL;
-        }
 
-        if(InputManager.Instance._RB)
+
+        //targetting stuff, may not use
+        if (InputManager.Instance._RB)
         {
             //_lockedTarget = 
         }
@@ -240,17 +261,17 @@ public class BaseCharacter : MonoBehaviour
         {
             _lockedTarget = _defaultTarget.gameObject;
 
-            if(right)
+            if (right)
             {
                 _lockedTarget.transform.position = transform.position + new Vector3(5, 0, 0);
             }
-            else if(left)
+            else if (left)
             {
                 _lockedTarget.transform.position = transform.position + new Vector3(-5, 0, 0);
             }
         }
 
-        if(_lockedTarget.transform.position.x >= transform.position.x)
+        if (_lockedTarget.transform.position.x >= transform.position.x)
         {
             _trueDirection = 1;
         }
@@ -258,18 +279,20 @@ public class BaseCharacter : MonoBehaviour
         {
             _trueDirection = -1;
         }
-
-        ProcessInputsToBuffer();
     }
-    
+
     virtual protected void ProcessInputsToBuffer()
     {
         bool actionChosen = false;
-        for(int i = 0; i < _actionList.Count; i++)
+        for (int i = 0; i < _actionList.Count; i++)
         {
             if (!actionChosen)
             {
                 bool inputsMatch = true;
+                if(_actionList[i]._inputAccessible == false) //Checks if the move is 'accessible', therefore not using it (useful when it has no inputs specified)
+                {
+                    inputsMatch = false;
+                }
                 for (int ii = 0; ii < _actionList[i]._inputsRequired.Count; ii++)
                 {
                     if (!_inputList.Contains(_actionList[i]._inputsRequired[ii]))
@@ -292,9 +315,9 @@ public class BaseCharacter : MonoBehaviour
 
     void UseBufferedAction()
     {
-        if(_bufferedAction != null)
+        if (_bufferedAction != null)
         {
-            if(_state == OVERRIDESTATE.MOVEMENT || _cancellable)
+            if (_state == OVERRIDESTATE.MOVEMENT || _cancellable)
             {
                 _actionEventIndex = 0;
                 _timeIntoAction = 0;
@@ -316,6 +339,8 @@ public class BaseCharacter : MonoBehaviour
             _velocity.y = 0;
         }
 
+        //        if (_playerControlled)
+        //        {
         if (_statePosition == POSITIONSTATE.GROUNDED)
         {
             SetAerialDegredation(1);
@@ -330,10 +355,10 @@ public class BaseCharacter : MonoBehaviour
             //    //targetVelocityX = _controller.collisions.platformVelocity.x;
             //}
         }
-        else if(_statePosition == POSITIONSTATE.AERIAL)
+        else if (_statePosition == POSITIONSTATE.AERIAL)
         {
             _velocity.x += _input.x * _moveSpeed * _accelerationTimeAirborne;
-            if(Mathf.Abs(_velocity.x) > _moveSpeed)
+            if (Mathf.Abs(_velocity.x) > _moveSpeed)
             {
                 _velocity.x = _moveSpeed * Mathf.Sign(_velocity.x);
             }
@@ -343,7 +368,15 @@ public class BaseCharacter : MonoBehaviour
             //    _velocity.y = _jumpVelocity;
             //    _jumpsLeft--;
             //}
-        }        
+        }
+        //        }
+        //        else
+        //        {
+        //            if(_statePosition == POSITIONSTATE.GROUNDED)
+        //            {
+        //                _velocity.x = 0;
+        //            }
+        //        }
 
         //this may go under grounded positionstate
         if (((_velocity.x < 0 && _controller.collisions.left) || (_velocity.x > 0 && _controller.collisions.right)))
@@ -356,7 +389,7 @@ public class BaseCharacter : MonoBehaviour
     {
         _timeIntoAction += Time.deltaTime;
         bool actionsLeftThisFrame = true;
-        if(_currentAction._groundCancel && _statePosition == POSITIONSTATE.GROUNDED)
+        if (_currentAction._groundCancel && _statePosition == POSITIONSTATE.GROUNDED)
         {
             Cancel();
             actionsLeftThisFrame = false;
@@ -387,7 +420,7 @@ public class BaseCharacter : MonoBehaviour
 
     public void ProcessCancelAndInvulnFrames()
     {
-        if(_cancelTimer > 0)
+        if (_cancelTimer > 0)
         {
             _cancellable = false;
             _cancelTimer -= Time.deltaTime;
@@ -397,7 +430,7 @@ public class BaseCharacter : MonoBehaviour
             _cancellable = true;
         }
 
-        if(_iFrameTimer > 0)
+        if (_iFrameTimer > 0)
         {
             _invincibleFrames = true;
             _iFrameTimer -= Time.deltaTime;
@@ -419,6 +452,23 @@ public class BaseCharacter : MonoBehaviour
         _stateAction = BASECHARACTERSACTIONSTATE.NONE;
     }
 
+    public void DistributeDamageInformation(DamageInformation a_damageInfo)
+    {
+        if(a_damageInfo._cancels)
+        {
+            Cancel();
+        }
+        _HPCurrent -= a_damageInfo._HP;
+        _poiseCurrent -= a_damageInfo._poise;
+
+        if(_HPCurrent < 0)
+        {
+            Destroy(_defaultTarget.gameObject);
+            Destroy(this.gameObject);
+        }
+    }
+
+    //Single-use functions
     public void CancellableAt(float a_time)
     {
         _cancellable = false;
@@ -454,12 +504,27 @@ public class BaseCharacter : MonoBehaviour
     }
 }
 
+public struct DamageInformation
+{
+    public float _HP;
+    public float _poise;
+    public bool _cancels;
+
+    public DamageInformation(float a_HP, float a_poise, bool a_cancels = true)
+    {
+        _HP = a_HP;
+        _poise = a_poise;
+        _cancels = a_cancels;
+    }
+}
+
 //[System.Serializable]
 public class BaseAction //READ ONLY
 {
     public List<BaseEvent> _eventList;
     public List<INPUTTYPE> _inputsRequired;
 
+    public bool _inputAccessible;
     public bool _groundCancel;
 
     public string _actionName;
@@ -469,6 +534,7 @@ public class BaseAction //READ ONLY
         _eventList = new List<BaseEvent>();
         _inputsRequired = new List<INPUTTYPE>();
         _groundCancel = false;
+        _inputAccessible = true;
     }
 
     public void UseGroundCancel()
@@ -496,6 +562,11 @@ public class BaseAction //READ ONLY
     {
         _actionName = a_name;
     }
+
+    public void SetAccessibility(bool a_playerAccessible)
+    {
+        _inputAccessible = a_playerAccessible;
+    }
 }
 
 //[System.Serializable]
@@ -505,7 +576,7 @@ public class BaseEvent// : System.Object
 
     virtual public void TriggerEvent(BaseCharacter a_character)
     {
-        
+
     }
 
     public void SetTriggerTime(float a_time)
@@ -548,7 +619,7 @@ public class EventSetVelocityOnce : BaseEvent
 }
 
 public class EventSetXVelocity : BaseEvent
-{    
+{
     public float _XVelocity;
 
     public EventSetXVelocity(float a_XVelocity)
@@ -579,8 +650,8 @@ public class EventSetVelocityWithInputMagnitude : BaseEvent
 
     public override void TriggerEvent(BaseCharacter a_character)
     {
-        
-        if(_useX && !_useY)
+
+        if (_useX && !_useY)
         {
             if (InputManager.Instance._moveAxis.x != 0)
             {
@@ -591,7 +662,7 @@ public class EventSetVelocityWithInputMagnitude : BaseEvent
                 a_character._velocity.x = 0;
             }
         }
-        else if(_useY && !_useX)
+        else if (_useY && !_useX)
         {
             if (InputManager.Instance._moveAxis.y != 0)
             {
@@ -602,7 +673,7 @@ public class EventSetVelocityWithInputMagnitude : BaseEvent
                 a_character._velocity.y = 0;
             }
         }
-        else if(_useX && _useY)
+        else if (_useX && _useY)
         {
             Vector3 finalVelocity = new Vector3(InputManager.Instance._moveAxis.x, InputManager.Instance._moveAxis.y, 0);
             //Debug.Log(finalVelocity);
